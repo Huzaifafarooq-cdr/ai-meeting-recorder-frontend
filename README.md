@@ -53,8 +53,11 @@ ai-meeting-recorder/
 
 **Dashboard**: new recording, upload audio, recent meetings, live processing status, usage stats and global search (`Ctrl K` / `⌘K`).
 
+**Languages**: English and Hindi are both supported, including Hinglish (switching between the two in the same sentence). Hindi is transcribed in Devanagari, and the summary, action items, decisions and title are generated from the transcript in either language. Set with `STT_LANGUAGE=multi` (see [Getting started](#getting-started)).
+
 **Live recording**
 - Start, pause, resume and stop with a pause-aware timer
+- Record from the **microphone** or from a **meeting tab** (Google Meet, Zoom or Teams in the browser): the tab's audio and your microphone are mixed, so everyone in the call is captured, even with headphones (Chrome and Edge on desktop)
 - Live waveform, input level meter and microphone picker
 - Real-time transcript: partial words appear immediately and are replaced by finalized text, with auto-scroll and a "jump to latest" button
 - Multi-speaker detection with the active speaker shown live
@@ -119,6 +122,7 @@ Minimum `.env` values:
 |---|---|
 | `JWT_ACCESS_SECRET`, `JWT_MEDIA_SECRET` | Random strings, at least 32 characters: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` |
 | `DEEPGRAM_API_KEY` | Deepgram key |
+| `STT_LANGUAGE` | `multi` for English + Hindi (and Hinglish), `en` for English only, `hi` for Hindi only |
 | `LLM_API_KEY` | Key for the LLM provider |
 | `LLM_BASE_URL`, `LLM_MODEL` | Defaults to Gemini (`gemini-flash-lite-latest`). For OpenAI: `https://api.openai.com/v1` and e.g. `gpt-4o-mini` |
 | `MONGODB_URI` + `USE_IN_MEMORY_DB` | Set `USE_IN_MEMORY_DB=true` to start an embedded MongoDB, or `false` and a `MONGODB_URI` (Atlas or local) |
@@ -205,6 +209,7 @@ Open http://localhost:5173, create an account, then record a meeting or upload a
 1. `MediaRecorder` emits a WebM/Opus chunk every 250 ms. Each chunk is framed as `[flags][seq:u32][bytes]` and sent over `/ws/live`.
 2. The gateway appends each chunk to storage in order and forwards it to a Deepgram streaming session (`interim_results`, `diarize`).
 3. Results are split into speaker runs. Interim hypotheses are pushed as partials (grey italics in the UI). Final segments replace them and are saved in batches as `kind: 'live'` segments.
+4. Streaming diarization needs time to learn the voices, so early on it tends to put everyone under one speaker. Every few seconds early on (6 s, 12 s, 20 s, 30 s…) and less often later (up to about 7 min), the gateway re-transcribes the audio recorded so far as a whole file in the background. If that finds more than one speaker, recent live lines are relabelled to match (the text stays as it was, labels are kept consistent with what is already on screen, and lines older than ~15 s are left alone so the screen does not keep changing) and the browser gets a `live_reset` with the corrected lines. Later live lines are mapped to the same labels. If it finds only one speaker, nothing changes.
 
 ### When the user stops
 
@@ -216,7 +221,7 @@ Open http://localhost:5173, create an account, then record a meeting or upload a
 |---|---|
 | Audio upload | Checks that the audio exists and isn't empty; moves it to GridFS |
 | Speech-to-text | Pre-recorded transcription of the full file (more accurate than the live pass); flags low confidence |
-| Speaker separation | Normalizes diarized speakers (Speaker A, B…) and merges fragments into speaker turns |
+| Speaker separation | Speakers come from Deepgram's per-word diarization (Speaker A, B…). If that finds only one speaker, three fallbacks run in order: a single-language Deepgram pass (nova-3's multilingual mode sometimes merges speakers), the live pass's speaker labels aligned by timestamp, and finally an LLM check that splits only clear dialogue (a question and its answer, greetings, short replies) when the replies are too short for any voice model. Fragments are then merged into speaker turns |
 | Transcript generation | LLM cleanup in batches of 40 segments, run in parallel up to `LLM_CONCURRENCY`. A failed batch falls back to rule-based cleanup with a `PARTIAL_CLEANUP` warning |
 | AI summary | Overview, topics, decisions, outcome. Long meetings are map-reduced (chunk notes, then a final summary) |
 | Action items | Tasks with owner and due date, plus key decisions |
@@ -352,7 +357,9 @@ How the design supports thousands of concurrent users:
 ## Assumptions and limitations
 
 - Live transcription streams WebM/Opus, which Chrome, Edge and Firefox produce. Safari records MP4/AAC, so live captions may not work there, but the transcript after recording still does.
-- Speaker labels come from Deepgram's diarization. Live and final labels can differ; the final transcript is authoritative.
+- Languages: with `STT_LANGUAGE=multi`, Deepgram's nova-3 handles English and Hindi (and also Spanish, French, German, Italian, Portuguese, Dutch, Russian and Japanese), including switching mid-sentence. Other languages, such as Urdu or Tamil, aren't supported.
+- Meeting-tab recording needs Chrome or Edge on desktop with "Also share tab audio" turned on. Firefox and Safari can't share tab audio, and phones can't share tabs, so there the app records the microphone only.
+- Speaker labels come from Deepgram's diarization. Live and final labels can differ; the final transcript is authoritative. Very short replies (a word or two) can't be told apart by voice; for those the final transcript falls back to a text-based check that only splits clear dialogue.
 - The embedded MongoDB (`USE_IN_MEMORY_DB=true`) is for local development only and doesn't support a separate worker process; use a real `MONGODB_URI` in production.
 - Action items are matched by position, so reprocessing a recording generates a fresh list and clears ticks.
 - AI output quality depends on the chosen LLM. Free Gemini tiers have daily request limits; when a quota is exhausted, the app reports it instead of retrying forever.
