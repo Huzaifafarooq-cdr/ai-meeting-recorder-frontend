@@ -117,6 +117,18 @@ export function useLiveTranscript() {
             setPartial(msg.segment);
           }
           break;
+        case 'live_reset': {
+          // the server re-checked speakers on the audio so far and sent the corrected lines;
+          // keep any newer lines that arrived while it was working
+          const pending = r.pendingFinals.splice(0);
+          if (r.flushRaf) cancelAnimationFrame(r.flushRaf);
+          r.flushRaf = null;
+          const ids = new Set(msg.segments.map((s) => s.id));
+          setSegments((prev) =>
+            msg.segments.concat(prev.concat(pending).filter((s) => !ids.has(s.id))).sort((a, b) => a.start - b.start)
+          );
+          break;
+        }
         case 'ack':
           setSync((s) => ({ ...s, ackedBytes: msg.bytes }));
           break;
