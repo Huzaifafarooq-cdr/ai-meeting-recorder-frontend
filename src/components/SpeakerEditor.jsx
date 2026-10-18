@@ -5,14 +5,19 @@ import { toast } from 'sonner';
 import { Users } from 'lucide-react';
 import { speakerColor } from '../lib/constants';
 import { recordingsApi } from '../lib/recordings';
+import { LIMITS } from '../lib/validation';
 import { Button, inputClass } from './ui';
 
 export function SpeakerEditor({ recording, onDone }) {
   const queryClient = useQueryClient();
   const [names, setNames] = useState(() => Object.fromEntries(recording.speakers.map((s) => [s.label, s.name ?? ''])));
 
+  const changes = recording.speakers
+    .map((s) => ({ label: s.label, name: (names[s.label] ?? '').trim() }))
+    .filter((s, i) => s.name !== (recording.speakers[i].name ?? '').trim());
+
   const mutation = useMutation({
-    mutationFn: () => recordingsApi.renameSpeakers(recording.id, Object.entries(names).map(([label, name]) => ({ label, name }))),
+    mutationFn: () => recordingsApi.renameSpeakers(recording.id, changes),
     onSuccess: (rec) => {
       queryClient.setQueryData(['recording', rec.id], rec);
       toast.success('Speaker names saved');
@@ -25,6 +30,8 @@ export function SpeakerEditor({ recording, onDone }) {
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        if (mutation.isPending) return;
+        if (!changes.length) return onDone?.();
         mutation.mutate();
       }}
       className="rounded-lg border border-slate-200 bg-slate-50/60 p-4"
@@ -39,7 +46,7 @@ export function SpeakerEditor({ recording, onDone }) {
             <input
               className={inputClass}
               placeholder="e.g. John"
-              maxLength={60}
+              maxLength={LIMITS.speakerName}
               value={names[s.label] ?? ''}
               onChange={(e) => setNames((n) => ({ ...n, [s.label]: e.target.value }))}
               aria-label={`Name for ${s.label}`}

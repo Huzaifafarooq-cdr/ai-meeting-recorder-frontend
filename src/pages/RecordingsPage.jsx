@@ -9,6 +9,7 @@ import { Alert, Button, Card, EmptyState, Skeleton, inputClass } from '../compon
 import { useUploadDialog } from '../components/uploadContext';
 import { useDebouncedValue } from '../hooks/useMisc';
 import { recordingsApi } from '../lib/recordings';
+import { LIMITS, isValidDateRange } from '../lib/validation';
 
 const PAGE_SIZE = 12;
 
@@ -24,7 +25,7 @@ export function RecordingsPage() {
   const from = params.get('from') ?? '';
   const to = params.get('to') ?? '';
   const status = params.get('status') ?? '';
-  const page = Number(params.get('page') ?? 1);
+  const page = Math.max(1, Math.floor(Number(params.get('page')) || 1));
   const [toDelete, setToDelete] = useState(null);
 
   const setParam = (key, value) =>
@@ -50,11 +51,15 @@ export function RecordingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.get('q')]);
 
-  const query = { q: params.get('q') ?? '', from: startOfDay(from), to: endOfDay(to), status, page, limit: PAGE_SIZE };
+  const urlQ = (params.get('q') ?? '').trim().slice(0, LIMITS.search);
+  const queryTooShort = urlQ.length > 0 && urlQ.length < LIMITS.searchMin;
+  const rangeInvalid = !isValidDateRange(from, to);
+  const query = { q: urlQ, from: startOfDay(from), to: endOfDay(to), status, page, limit: PAGE_SIZE };
   const list = useQuery({
     queryKey: ['recordings', query],
     queryFn: ({ signal }) => recordingsApi.list(query, signal),
     placeholderData: keepPreviousData,
+    enabled: !queryTooShort && !rangeInvalid,
   });
 
   const del = useMutation({
@@ -87,8 +92,17 @@ export function RecordingsPage() {
         <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
-            <input type="search" className={`${inputClass} pl-9 pr-9`} placeholder="e.g. authentication, Redis, deployment…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search recordings" />
-            {(q.trim() !== debouncedQ || list.isFetching) && (
+            <input
+              type="search"
+              className={`${inputClass} pl-9 pr-9`}
+              placeholder="e.g. authentication, Redis, deployment…"
+              value={q}
+              maxLength={LIMITS.search}
+              onChange={(e) => setQ(e.target.value)}
+              aria-label="Search recordings"
+              aria-describedby={queryTooShort ? 'search-hint' : undefined}
+            />
+            {((q.trim() !== debouncedQ && q.trim().length !== 1) || list.isFetching) && (
               <Loader2 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" aria-label="Searching" />
             )}
           </div>
@@ -109,8 +123,18 @@ export function RecordingsPage() {
           </select>
         </div>
         {hasFilters && (
-          <div className="mt-3 flex items-center justify-between text-sm text-slate-500">
-            <span aria-live="polite">{list.data ? `${list.data.total} result${list.data.total === 1 ? '' : 's'}` : 'Searching…'}</span>
+          <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-500">
+            {rangeInvalid ? (
+              <span id="search-hint" className="text-rose-600" role="alert">
+                The &ldquo;From&rdquo; date must be on or before the &ldquo;To&rdquo; date.
+              </span>
+            ) : queryTooShort ? (
+              <span id="search-hint" role="status">
+                Type at least {LIMITS.searchMin} characters to search.
+              </span>
+            ) : (
+              <span aria-live="polite">{list.data ? `${list.data.total} result${list.data.total === 1 ? '' : 's'}` : 'Searching…'}</span>
+            )}
             <Button
               variant="ghost"
               size="sm"

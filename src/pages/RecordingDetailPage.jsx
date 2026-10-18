@@ -29,6 +29,7 @@ import {
   Users,
 } from 'lucide-react';
 import { recordingsApi } from '../lib/recordings';
+import { LIMITS, validateTitle } from '../lib/validation';
 import { formatDate, formatDuration } from '../lib/format';
 import { stageLabel } from '../lib/constants';
 import { StatusBadge } from '../components/StatusBadge';
@@ -54,6 +55,7 @@ function TitleEditor({ recording }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(recording.title);
+  const [error, setError] = useState(null);
   const mutation = useMutation({
     mutationFn: (title) => recordingsApi.update(recording.id, { title }),
     onSuccess: (rec) => {
@@ -74,6 +76,7 @@ function TitleEditor({ recording }) {
           className="shrink-0 opacity-60 group-hover:opacity-100"
           onClick={() => {
             setValue(recording.title);
+            setError(null);
             setEditing(true);
           }}
           aria-label="Edit title"
@@ -85,19 +88,45 @@ function TitleEditor({ recording }) {
   }
   return (
     <form
-      className="flex w-full max-w-xl gap-2"
+      className="w-full max-w-xl"
+      noValidate
       onSubmit={(e) => {
         e.preventDefault();
-        if (value.trim()) mutation.mutate(value.trim());
+        if (mutation.isPending) return;
+        const invalid = validateTitle(value);
+        if (invalid) return setError(invalid);
+        const title = value.trim();
+        if (title === recording.title) return setEditing(false);
+        mutation.mutate(title);
       }}
     >
-      <input className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} autoFocus aria-label="Meeting title" onKeyDown={(e) => e.key === 'Escape' && setEditing(false)} />
-      <Button type="submit" loading={mutation.isPending} size="md">
-        Save
-      </Button>
-      <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
-        Cancel
-      </Button>
+      <div className="flex gap-2">
+        <input
+          className={inputClass}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (error) setError(null);
+          }}
+          maxLength={LIMITS.title}
+          autoFocus
+          aria-label="Meeting title"
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? 'title-error' : undefined}
+          onKeyDown={(e) => e.key === 'Escape' && setEditing(false)}
+        />
+        <Button type="submit" loading={mutation.isPending} size="md">
+          Save
+        </Button>
+        <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+      </div>
+      {error && (
+        <p id="title-error" className="mt-1 text-xs text-rose-600">
+          {error}
+        </p>
+      )}
     </form>
   );
 }
@@ -125,13 +154,15 @@ function ActionItems({ recordingId, items }) {
     <ul className="space-y-2">
       {items.map((item, i) => {
         const checked = Boolean(item.done);
+        const saving = toggle.isPending && toggle.variables?.index === i;
         return (
           <li key={i}>
             <button
               type="button"
-              onClick={() => toggle.mutate({ index: i, done: !checked })}
+              onClick={() => !saving && toggle.mutate({ index: i, done: !checked })}
               className="flex w-full items-start gap-3 rounded-lg p-2 text-left hover:bg-slate-50"
               aria-pressed={checked}
+              aria-busy={saving}
             >
               {checked ? <CheckSquare className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden /> : <Square className="mt-0.5 h-5 w-5 shrink-0 text-slate-300" aria-hidden />}
               <span className="min-w-0 flex-1">

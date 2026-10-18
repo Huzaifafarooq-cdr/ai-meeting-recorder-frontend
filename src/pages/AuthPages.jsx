@@ -4,6 +4,7 @@ import { AudioLines, ListChecks, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/useAuth';
 import { Logo } from '../components/AppLayout';
 import { Alert, Button, Field, inputClass } from '../components/ui';
+import { LIMITS, validateLogin, validateRegister } from '../lib/validation';
 
 function AuthLayout({ title, subtitle, children, footer }) {
   return (
@@ -37,7 +38,7 @@ function AuthLayout({ title, subtitle, children, footer }) {
   );
 }
 
-function useAuthForm(initial, submit) {
+function useAuthForm(initial, validate, submit) {
   const [values, setValues] = useState(initial);
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -46,17 +47,29 @@ function useAuthForm(initial, submit) {
     id: name,
     name,
     value: values[name],
-    onChange: (e) => setValues((v) => ({ ...v, [name]: e.target.value })),
+    onChange: (e) => {
+      const { value } = e.target;
+      setValues((v) => ({ ...v, [name]: value }));
+      if (errors[name]) setErrors(({ [name]: _, ...rest }) => rest);
+    },
     'aria-invalid': Boolean(errors[name]),
     'aria-describedby': errors[name] ? `${name}-error` : undefined,
   });
   const onSubmit = async (e) => {
     e.preventDefault();
-    setErrors({});
+    if (loading) return;
     setFormError(null);
+    const invalid = validate(values);
+    if (Object.keys(invalid).length) {
+      setErrors(invalid);
+      document.getElementById(Object.keys(initial).find((k) => invalid[k]))?.focus();
+      return;
+    }
+    setErrors({});
     setLoading(true);
     try {
-      await submit(values);
+      const clean = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, k === 'password' ? v : v.trim()]));
+      await submit(clean);
     } catch (err) {
       if (err.details?.length) setErrors(Object.fromEntries(err.details.toReversed().map((d) => [d.field, d.message])));
       else setFormError(err.message);
@@ -71,7 +84,7 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const form = useAuthForm({ email: '', password: '' }, async (v) => {
+  const form = useAuthForm({ email: '', password: '' }, validateLogin, async (v) => {
     await login(v);
     navigate(location.state?.from ?? '/', { replace: true });
   });
@@ -92,10 +105,10 @@ export function LoginPage() {
       <form onSubmit={form.onSubmit} className="space-y-4" noValidate>
         {form.formError && <Alert tone="error">{form.formError}</Alert>}
         <Field label="Email" id="email" error={form.errors.email}>
-          <input type="email" autoComplete="email" required className={inputClass} {...form.bind('email')} />
+          <input type="email" autoComplete="email" required maxLength={LIMITS.email} className={inputClass} {...form.bind('email')} />
         </Field>
         <Field label="Password" id="password" error={form.errors.password}>
-          <input type="password" autoComplete="current-password" required className={inputClass} {...form.bind('password')} />
+          <input type="password" autoComplete="current-password" required maxLength={LIMITS.password} className={inputClass} {...form.bind('password')} />
         </Field>
         <Button type="submit" className="w-full" loading={form.loading}>
           Log in
@@ -108,7 +121,7 @@ export function LoginPage() {
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const form = useAuthForm({ name: '', email: '', password: '' }, async (v) => {
+  const form = useAuthForm({ name: '', email: '', password: '' }, validateRegister, async (v) => {
     await register(v);
     navigate('/', { replace: true });
   });
@@ -129,13 +142,13 @@ export function RegisterPage() {
       <form onSubmit={form.onSubmit} className="space-y-4" noValidate>
         {form.formError && <Alert tone="error">{form.formError}</Alert>}
         <Field label="Full name" id="name" error={form.errors.name}>
-          <input autoComplete="name" required className={inputClass} {...form.bind('name')} />
+          <input autoComplete="name" required maxLength={LIMITS.name} className={inputClass} {...form.bind('name')} />
         </Field>
         <Field label="Email" id="email" error={form.errors.email}>
-          <input type="email" autoComplete="email" required className={inputClass} {...form.bind('email')} />
+          <input type="email" autoComplete="email" required maxLength={LIMITS.email} className={inputClass} {...form.bind('email')} />
         </Field>
         <Field label="Password" id="password" error={form.errors.password} hint="At least 8 characters, with a letter and a number.">
-          <input type="password" autoComplete="new-password" required className={inputClass} {...form.bind('password')} />
+          <input type="password" autoComplete="new-password" required maxLength={LIMITS.password} className={inputClass} {...form.bind('password')} />
         </Field>
         <Button type="submit" className="w-full" loading={form.loading}>
           Create account
