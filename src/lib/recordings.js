@@ -11,6 +11,7 @@ export const recordingsApi = {
   renameSpeakers: (id, speakers) => api(`/api/recordings/${id}/speakers`, { method: 'PATCH', body: { speakers } }).then((r) => r.recording),
   setActionItemDone: (id, index, done) => api(`/api/recordings/${id}/action-items/${index}`, { method: 'PATCH', body: { done } }).then((r) => r.recording),
   retry: (id) => api(`/api/recordings/${id}/retry`, { method: 'POST' }).then((r) => r.recording),
+  recover: (id) => api(`/api/recordings/${id}/recover`, { method: 'POST' }).then((r) => r.recording),
   remove: (id) => api(`/api/recordings/${id}`, { method: 'DELETE' }),
   mediaUrl: (id) => api(`/api/recordings/${id}/media-url`),
 

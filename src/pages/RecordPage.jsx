@@ -42,6 +42,73 @@ function StatusItem({ icon: Icon, label, children }) {
   );
 }
 
+const ACTIVE_KEY = 'buzytech.activeRecording';
+
+const activeRecording = {
+  get() {
+    try {
+      return sessionStorage.getItem(ACTIVE_KEY);
+    } catch {
+      return null;
+    }
+  },
+  set(id) {
+    try {
+      sessionStorage.setItem(ACTIVE_KEY, id);
+    } catch {
+      /* storage unavailable */
+    }
+  },
+  clear() {
+    try {
+      sessionStorage.removeItem(ACTIVE_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  },
+};
+
+function InterruptedNotice({ recordingId, onDismiss }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const recover = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await recordingsApi.recover(recordingId);
+      onDismiss();
+      navigate(`/recordings/${recordingId}`);
+    } catch (err) {
+      if (err.status === 404) return onDismiss();
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Alert
+      tone="warning"
+      className="mb-4"
+      title="Your last recording was interrupted"
+      action={
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={onDismiss} disabled={busy}>
+            Dismiss
+          </Button>
+          <Button size="sm" onClick={recover} loading={busy}>
+            Process it now
+          </Button>
+        </div>
+      }
+    >
+      The page was reloaded while recording. The audio that already reached the server is safe and can be transcribed and summarised now.
+      {error && <span className="mt-1 block text-rose-700">{error}</span>}
+    </Alert>
+  );
+}
+
 export function RecordPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -58,6 +125,7 @@ export function RecordPage() {
   const [finishing, setFinishing] = useState(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+  const [interruptedId, setInterruptedId] = useState(activeRecording.get);
   const recordingRef = useRef(null);
   recordingRef.current = recording;
 
@@ -102,6 +170,8 @@ export function RecordPage() {
     try {
       const rec = await recordingsApi.createLive({ title: title.trim() || undefined, mimeType });
       setRecording(rec);
+      activeRecording.set(rec.id);
+      setInterruptedId(null);
       live.connect(rec.id, { getActivity: () => ({ speaking: recorder.speakingRef.current, t: recorder.getElapsed() }) });
     } catch (err) {
       recorder.reset();
@@ -115,6 +185,7 @@ export function RecordPage() {
       if (!rec) return;
       if (durationSec < MIN_DURATION_S) {
         live.disconnect();
+        activeRecording.clear();
         recordingsApi.remove(rec.id).catch(() => {});
         setRecording(null);
         recorder.reset();
@@ -139,6 +210,7 @@ export function RecordPage() {
         } else {
           await upload();
         }
+        activeRecording.clear();
         queryClient.invalidateQueries({ queryKey: ['recordings'] });
         queryClient.invalidateQueries({ queryKey: ['stats'] });
         allowNavRef.current = true;
@@ -157,6 +229,7 @@ export function RecordPage() {
     setDiscarding(true);
     recorder.reset();
     live.disconnect();
+    activeRecording.clear();
     if (recording) await recordingsApi.remove(recording.id).catch(() => {});
     setRecording(null);
     setFinishing(null);
@@ -216,6 +289,15 @@ export function RecordPage() {
         )}
       </div>
 
+      {interruptedId && !recording && (
+        <InterruptedNotice
+          recordingId={interruptedId}
+          onDismiss={() => {
+            activeRecording.clear();
+            setInterruptedId(null);
+          }}
+        />
+      )}
       {error && (
         <Alert tone="error" className="mb-4">
           {error}
