@@ -375,7 +375,10 @@ export function RecordPage() {
 
         <Card className="flex flex-col lg:col-span-3">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
-            <h2 className="font-semibold text-slate-900">Live transcript</h2>
+            <div>
+              <h2 className="font-semibold text-slate-900">Live transcript</h2>
+              <p className="text-xs text-slate-500">Draft. Speakers and wording are refined automatically after you stop.</p>
+            </div>
             {live.connection === 'live' && (
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" /> Listening
