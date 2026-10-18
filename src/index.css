@@ -28,6 +28,27 @@ body {
   @apply outline-2 outline-offset-2 outline-brand-500;
 }
 
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  [role='tab'],
+  [role='option'],
+  select:not(:disabled),
+  summary,
+  label[for],
+  input[type='file']:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled),
+  input[type='date']:not(:disabled)::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+  }
+
+  :disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+}
+
 .cv-auto {
   content-visibility: auto;
   contain-intrinsic-size: auto 72px;
